@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="com.obiscr.chatgpt.settings.EasyCodeState">
+    <option name="projectFiles" value="$PROJECT_DIR$/app/main.py;/Users/popylamerveille/PycharmProjects/Etl/rag_project/data/raw/readme.md;/Users/popylamerveille/PycharmProjects/Etl/rag_project/rag/index.py;/Users/popylamerveille/PycharmProjects/Etl/rag_project/rag/ingest.py;/Users/popylamerveille/PycharmProjects/Etl/rag_project/rag/search.py;/Users/popylamerveille/PycharmProjects/Etl/rag_project/rag/utils.py" />
+  </component>
+</project>
