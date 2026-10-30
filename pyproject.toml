@@ -1,9 +1,9 @@
 ## `pyproject.toml`
 
 [tool.poetry]
-name = "rag_project"
+name = "noria"
 version = "0.1.0"
-description = "RAG local avec Ollama + Qdrant"
+description = "Noria — laboratoire de recherche documentaire local avec Ollama et Qdrant"
 authors = ["assabu@gmail.com"]
 
 
@@ -23,6 +23,7 @@ numpy = "^1.26.4"
 httpx = "^0.27.0"
 requests = "^2.32.3"
 pydantic = "^2.8.2"
+pypdf = ">=6,<7"
 
 
 [tool.poetry.group.dev.dependencies]

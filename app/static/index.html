@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#182b27">
+  <title>Noria — votre laboratoire documentaire</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="Noria, accueil"><span class="brand-mark">n<span>↗</span></span><span>noria<small>LE LABORATOIRE LOCAL</small></span></a>
+    <div class="workspace"><span class="workspace-icon">◈</span><div>Mon espace de test<small>Documents & intelligence locale</small></div><span class="local-dot" title="Exécution locale"></span></div>
+    <p class="nav-label">VOTRE PARCOURS</p>
+    <nav aria-label="Navigation principale">
+      <button class="nav-item active" data-view="corpus"><span class="nav-number">01</span> Corpus & pipeline <span class="nav-arrow">↗</span></button>
+      <button class="nav-item" data-view="lab"><span class="nav-number">02</span> Laboratoire <span class="nav-arrow">↗</span></button>
+    </nav>
+    <div class="history-heading"><p class="nav-label">TESTS RÉCENTS</p><button id="clear-history" class="text-button" title="Effacer l’historique local">Effacer</button></div>
+    <div id="history-list" class="history-list"><p class="sidebar-muted">Vos recherches apparaîtront ici.</p></div>
+    <div class="sidebar-bottom"><div class="local-label"><span class="local-dot"></span> Vos données restent ici</div><p>Modèles et documents traités sur votre machine.</p><a href="/docs" target="_blank" rel="noopener">Documentation de l’API <span>↗</span></a></div>
+  </aside>
+
+  <main>
+    <header class="topbar"><div><span class="breadcrumb">Espace de travail</span><span class="slash">/</span><span id="page-label">Corpus & pipeline</span></div><div class="topbar-right"><span class="environment">LOCAL</span><button id="refresh-status" class="icon-button" aria-label="Actualiser l’état des services" title="Actualiser les services">↻</button></div></header>
+    <div class="content">
+      <div class="page-heading"><div><p class="eyebrow">DE VOS DOCUMENTS À VOS RÉPONSES</p><h1>Explorez ce que vos<br>documents ont à dire<span class="accent">.</span></h1><p class="intro">Importez votre corpus. Lancez la pipeline. Mettez votre RAG à l’épreuve.</p></div><div class="heading-stamp" aria-hidden="true"><span>DOCUMENTS</span><strong>↗</strong><span>CONNAISSANCE</span></div></div>
+      <section class="services" aria-label="État des services"><div class="service"><span id="qdrant-dot" class="status-dot"></span><strong>Qdrant</strong><span id="qdrant-status">Vérification…</span></div><div class="service"><span id="ollama-dot" class="status-dot"></span><strong>Ollama</strong><span id="ollama-status">Vérification…</span></div></section>
+      <div id="global-message" class="notice" role="status" hidden></div>
+
+      <section id="view-corpus" class="view">
+        <div class="section-heading"><div><span class="section-index">01 / PRÉPARER</span><h2>Votre matière première</h2></div><span class="subtle">.pdf, .txt & .md · 5 Mo / fichier</span></div>
+        <div class="corpus-grid">
+          <section class="card upload-card"><div class="card-heading"><h3>Importer des documents</h3><span class="tag">LOCAL</span></div><label id="drop-zone" class="drop-zone" for="file-input"><span class="upload-symbol" aria-hidden="true">↥</span><strong>Un document, de nouvelles réponses.</strong><span>Glissez vos fichiers ici ou <u>parcourez vos fichiers</u></span><small>PDF avec texte, texte brut et Markdown</small><input id="file-input" type="file" accept=".pdf,application/pdf,.txt,.md" multiple></label><p id="upload-feedback" class="helper" role="status">Les PDF scannés nécessitent un OCR. Lancez la pipeline après chaque import.</p><div class="document-heading"><strong>Corpus local</strong><span id="document-count" class="count">—</span></div><ul id="document-list" class="document-list"><li class="muted">Chargement des documents…</li></ul></section>
+          <section class="card pipeline-card"><div class="card-heading"><h3>Construire l’index</h3><span class="step-tag">ÉTAPE SUIVANTE</span></div><p class="card-description">Transformez votre corpus en extraits que la recherche pourra retrouver.</p><div class="settings-grid"><label>Taille des extraits <span>caractères</span><input id="chunk-size" type="number" min="50" max="4000" value="300" required></label><label>Chevauchement <span>caractères</span><input id="chunk-overlap" type="number" min="0" max="1000" value="60" required></label></div><label class="field-label" for="corpus-lang">Langue attribuée au corpus</label><select id="corpus-lang"><option value="fr">Français · fr</option><option value="en">Anglais · en</option></select><p class="helper">Ce choix étiquette tous les documents ; il ne traduit pas leur contenu.</p><div class="pipeline-warning"><span aria-hidden="true">↻</span><p>La pipeline réindexe <strong>tout le corpus local</strong> et remplace la collection actuelle.</p></div><button id="run-pipeline" class="button primary full">Lancer la pipeline <span>↗</span></button><div class="pipeline-progress"><div class="progress-heading"><span id="pipeline-stage" role="status">En attente d’indexation</span><strong id="pipeline-percent">0 %</strong></div><progress id="pipeline-progress" max="100" value="0" aria-label="Progression de la pipeline"></progress><p id="pipeline-detail" class="helper">Le premier chargement du modèle peut prendre plusieurs minutes.</p></div><button id="go-lab" class="button secondary full" data-view="lab">Ouvrir le laboratoire <span>→</span></button></section>
+        </div>
+      </section>
+
+      <section id="view-lab" class="view" hidden>
+        <div class="section-heading"><div><span class="section-index">02 / EXPÉRIMENTER</span><h2>Une question. Des preuves.</h2></div><button id="export-test" class="button secondary compact" disabled>Exporter le test ↓</button></div>
+        <section class="card query-card"><div class="card-heading"><h3>Interroger votre corpus</h3><span class="tag">EN DIRECT</span></div><form id="query-form"><label class="sr-only" for="question">Votre question ou clé de recherche</label><textarea id="question" maxlength="5000" rows="3" placeholder="Posez une question ou saisissez une clé de recherche…" required></textarea><div class="query-options"><div class="mode-control" role="group" aria-label="Mode de test"><button type="button" class="mode active" data-mode="retrieve" aria-pressed="true">Recherche seule</button><button type="button" class="mode" data-mode="ask" aria-pressed="false">Recherche + réponse</button></div><label class="inline-setting" for="search-lang">Langue <select id="search-lang"><option value="fr">FR</option><option value="en">EN</option><option value="">Toutes</option></select></label><label class="inline-setting" for="top-k">Extraits <select id="top-k"><option>1</option><option selected>3</option><option>5</option><option>10</option></select></label><button id="submit-query" class="button primary" type="submit">Rechercher <span>↗</span></button></div></form><div class="suggestions"><span>À essayer</span><button type="button" data-question="Qu’est-ce qu’un DAG dans Apache Airflow ?">Qu’est-ce qu’un DAG ? ↗</button><button type="button" data-question="Comment sont exécutées les tâches dans Airflow ?">L’exécution des tâches ↗</button></div></section>
+        <div id="query-loading" class="query-loading" role="status" hidden><span class="spinner"></span><div><strong id="loading-title">Recherche dans vos documents…</strong><p>Le premier calcul peut nécessiter le téléchargement du modèle d’embeddings.</p></div><span id="elapsed">0 s</span></div>
+        <div id="query-error" class="notice error" role="alert" hidden></div>
+        <div id="empty-state" class="empty-state"><span class="empty-symbol" aria-hidden="true">⌕</span><h3>Suivez le fil de vos documents.</h3><p>Lancez une recherche pour examiner les extraits,<br>leur correspondance et les temps de traitement.</p><div class="mini-flow"><span>Votre question</span><b>→</b><span>Les extraits</span><b>→</b><span>La réponse</span></div></div>
+        <section id="results" hidden aria-label="Résultats du test"><div class="metric-grid"><div class="metric"><span>Meilleure correspondance</span><strong id="best-score">—</strong><small>Similarité vectorielle, pas une confiance</small></div><div class="metric"><span>Recherche</span><strong id="retrieval-time">—</strong><small>Encodage + recherche Qdrant</small></div><div class="metric"><span>Génération</span><strong id="generation-time">—</strong><small id="generation-caption">Ollama</small></div><div class="metric"><span>Temps serveur total</span><strong id="total-time">—</strong><small id="result-count">—</small></div></div><section id="answer-panel" class="card answer-card" hidden><div class="card-heading"><h3>Réponse générée</h3><span class="tag">OLLAMA</span></div><div id="answer-text" class="answer-text"></div><p class="helper">Vérifiez les affirmations à partir des extraits ci-dessous.</p></section><div class="section-heading source-heading"><h3>Les passages retrouvés</h3><span class="subtle">Triés par similarité décroissante</span></div><p class="score-note">Correspondance = max(0, min(1, score cosinus)) × 100. Cet indice de proximité sémantique n’est pas un pourcentage de fiabilité.</p><div id="sources-list" class="sources-list"></div><details class="raw-details"><summary>Voir la réponse JSON</summary><pre id="raw-result"></pre></details></section>
+      </section>
+      <footer class="footer"><span>NORIA <span class="footer-dot">·</span> Faites circuler la connaissance</span><span>Ollama + Qdrant + FastAPI</span></footer>
+    </div>
+  </main>
+</body>
+</html>
