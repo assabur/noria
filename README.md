@@ -37,24 +37,119 @@ La question est transformée en vecteur avec le même modèle. Qdrant renvoie le
 
 ```mermaid
 sequenceDiagram
+  autonumber
   participant user as Utilisateur
   participant api as FastAPI
   participant search as rag/search.py
+  participant embed as Modèle embeddings
   participant qdrant as Qdrant
   participant ollama as Ollama
-  user->>api: POST /ask &#58; question et langue
+  user->>api: POST /ask avec question, langue et k
   api->>search: answer_question
-  search->>search: Calcul du vecteur de la question
-  search->>qdrant: Recherche des 3 extraits les plus proches avec filtre de langue
-  qdrant->>search: Extraits et scores de similarité
-  search->>ollama: Question et contexte documentaire
-  ollama->>search: Réponse générée
-  search->>api: Réponse, sources et latences
-  api->>user: Résultat JSON
-%% portable-canonical-v2:eyJhY2Nlc3NpYmlsaXR5IjpudWxsLCJkYXRhIjp7Im1lc3NhZ2VzIjpbeyJmcm9tIjoidXNlciIsInRleHQiOiJQT1NUIC9hc2sgOiBxdWVzdGlvbiBldCBsYW5ndWUiLCJ0byI6ImFwaSJ9LHsiZnJvbSI6ImFwaSIsInRleHQiOiJhbnN3ZXJfcXVlc3Rpb24iLCJ0byI6InNlYXJjaCJ9LHsiZnJvbSI6InNlYXJjaCIsInRleHQiOiJDYWxjdWwgZHUgdmVjdGV1ciBkZSBsYSBxdWVzdGlvbiIsInRvIjoic2VhcmNoIn0seyJmcm9tIjoic2VhcmNoIiwidGV4dCI6IlJlY2hlcmNoZSBkZXMgMyBleHRyYWl0cyBsZXMgcGx1cyBwcm9jaGVzIGF2ZWMgZmlsdHJlIGRlIGxhbmd1ZSIsInRvIjoicWRyYW50In0seyJmcm9tIjoicWRyYW50IiwidGV4dCI6IkV4dHJhaXRzIGV0IHNjb3JlcyBkZSBzaW1pbGFyaXTDqSIsInRvIjoic2VhcmNoIn0seyJmcm9tIjoic2VhcmNoIiwidGV4dCI6IlF1ZXN0aW9uIGV0IGNvbnRleHRlIGRvY3VtZW50YWlyZSIsInRvIjoib2xsYW1hIn0seyJmcm9tIjoib2xsYW1hIiwidGV4dCI6IlLDqXBvbnNlIGfDqW7DqXLDqWUiLCJ0byI6InNlYXJjaCJ9LHsiZnJvbSI6InNlYXJjaCIsInRleHQiOiJSw6lwb25zZSwgc291cmNlcyBldCBsYXRlbmNlcyIsInRvIjoiYXBpIn0seyJmcm9tIjoiYXBpIiwidGV4dCI6IlLDqXN1bHRhdCBKU09OIiwidG8iOiJ1c2VyIn1dLCJwYXJ0aWNpcGFudHMiOlt7ImlkIjoidXNlciIsImxhYmVsIjoiVXRpbGlzYXRldXIifSx7ImlkIjoiYXBpIiwibGFiZWwiOiJGYXN0QVBJIn0seyJpZCI6InNlYXJjaCIsImxhYmVsIjoicmFnL3NlYXJjaC5weSJ9LHsiaWQiOiJxZHJhbnQiLCJsYWJlbCI6IlFkcmFudCJ9LHsiaWQiOiJvbGxhbWEiLCJsYWJlbCI6Ik9sbGFtYSJ9XX0sImRlc2NyaXB0aW9uIjpudWxsLCJpZCI6InF1ZXN0aW9uIiwia2luZCI6InNlcXVlbmNlIiwic291cmNlU2hhMjU2IjoiMjA3YzQ4MTdiMTViMWUzMTM3YzI1YWVjYTRmMTA5MmJhZjQ1MjU0MTVjMjBkNGYzMTkzZjczNjkxZmJhYzk5MCIsInN0eWxlcyI6W10sInRpdGxlIjoiVHJhaXRlbWVudCBk4oCZdW5lIHF1ZXN0aW9uIiwidmVyc2lvbiI6MX0
+  search->>embed: encode de la question
+  embed-->>search: Vecteur de la question
+  search->>qdrant: query_points avec vecteur, filtre de langue et k
+  qdrant-->>search: k extraits, métadonnées et scores cosinus
+  search->>search: build_prompt avec question, textes et sources
+  search->>ollama: Générer une réponse à partir du prompt
+  ollama-->>search: Réponse générée
+  search-->>api: Réponse, sources et latences
+  api-->>user: Résultat JSON
 ```
 
 L’API renvoie la réponse, les chemins des sources, les scores de similarité et les temps de recherche et de génération.
+
+### 3. Comment un texte devient un embedding
+
+Un **embedding** est une liste de nombres qui représente le contenu d’un texte pour permettre sa comparaison avec d’autres textes. Dans Noria, `SentenceTransformer.encode(...)` applique le modèle préentraîné `intfloat/multilingual-e5-base` aux extraits pendant l’indexation et à la question pendant la recherche. Le modèle est déjà entraîné : importer un document ne le réentraîne pas.
+
+```mermaid
+flowchart TB
+  text["1. Texte d’un extrait &#58; La garantie dure 24 mois."]
+  encode["2. SentenceTransformer.encode reçoit le texte"]
+  tokens["3. Le tokenizer transforme le texte en tokens puis en identifiants numériques"]
+  model["4. Le réseau préentraîné calcule des représentations tenant compte du contexte"]
+  aggregate["5. Une agrégation produit un vecteur pour le texte entier"]
+  vector["6. Embedding &#58; liste de nombres, par exemple 0.023, -0.148, 0.091, ..."]
+  text --> encode
+  encode --> tokens
+  tokens --> model
+  model --> aggregate
+  aggregate --> vector
+```
+
+Les nombres ci-dessus sont fictifs et abrégés. Une coordonnée n’a pas ici une signification lisible comme « durée » ou « garantie » : c’est l’ensemble du vecteur qui sert à comparer les textes. Une question formulée différemment, comme « Pendant combien de temps suis-je couvert ? », peut ainsi être rapprochée de l’extrait sur la garantie. La pertinence dépend du modèle et du corpus.
+
+### 4. Ce qui est stocké dans Qdrant
+
+`rag/index.py` associe chaque extrait à son vecteur et écrit un **point** dans la collection `docs`. Une collection regroupe les points ; l’index vectoriel aide Qdrant à retrouver leurs voisins par similarité cosinus. Les métadonnées attachées à un point sont appelées **payload**.
+
+```mermaid
+flowchart TB
+  parquet["1. Lire un extrait dans data/chunks.parquet"]
+  encode["2. Calculer son embedding avec encode"]
+  id["Identifiant UUID dérivé de doc_id et chunk_index"]
+  vector["Vecteur &#58; embedding de cet extrait"]
+  payload["Payload &#58; text, doc_id, chunk_index, page, lang et source"]
+  point["3. Assembler un point &#58; id + vector + payload"]
+  collection["4. upsert dans la collection docs de Qdrant"]
+  index["5. Qdrant organise les vecteurs pour la recherche de voisins"]
+  parquet --> encode
+  parquet --> id
+  parquet --> payload
+  encode --> vector
+  id --> point
+  vector --> point
+  payload --> point
+  point --> collection
+  collection --> index
+```
+
+Exemple illustratif d’un point, avec un vecteur abrégé :
+
+```json
+{
+  "id": "1cb51e1e-6b59-5b4c-b511-51e222266ef7",
+  "vector": [0.023, -0.148, 0.091],
+  "payload": {
+    "text": "La garantie dure 24 mois.",
+    "doc_id": "uploads/abc/contrat.pdf",
+    "chunk_index": 0,
+    "page": 3,
+    "lang": "fr",
+    "source": "data/raw/uploads/abc/contrat.pdf"
+  }
+}
+```
+
+`doc_id` identifie le document relativement à `data/raw/`. `source` conserve le chemin utilisé à l’ingestion pour afficher et citer l’origine du passage. `chunk_index` commence à 0 ; `page` commence à 1 pour un PDF et vaut `null` pour un texte. Le PDF original reste sur disque. `data/chunks.parquet` conserve les extraits et leurs métadonnées ; les vecteurs sont calculés ensuite et envoyés à Qdrant.
+
+### 5. Comment la recherche retrouve les extraits (retrieve)
+
+La recherche calcule uniquement l’embedding de la **nouvelle question**. Les vecteurs des extraits sont déjà stockés dans Qdrant. La question et les extraits doivent utiliser le même modèle pour que leurs vecteurs soient comparables.
+
+```mermaid
+flowchart TB
+  question["1. Question &#58; Combien de temps dure la garantie ?"]
+  encode["2. Même modèle embeddings &#58; encode de la question"]
+  query["3. query_points &#58; vecteur de la question + langue + k"]
+  stored["Vecteurs des extraits déjà stockés dans Qdrant"]
+  compare["4. Qdrant recherche les voisins par similarité cosinus parmi les points admissibles"]
+  hits["5. Retour des k meilleurs points disponibles avec leur payload et leur score"]
+  result["6. retrieve renvoie textes, références, scores et temps de recherche"]
+  only["POST /retrieve &#58; afficher les extraits sans génération"]
+  prompt["POST /ask &#58; ajouter les textes et les sources au prompt Ollama"]
+  question --> encode
+  encode --> query
+  query --> compare
+  stored --> compare
+  compare --> hits
+  hits --> result
+  result --> only
+  result --> prompt
+```
+
+Par défaut, `k=3`. Le filtre de langue porte sur `payload.lang` ; une langue vide désactive ce filtre. Le score est calculé au moment de la recherche entre la question et chaque résultat : il n’est pas une propriété fixe stockée avec l’extrait. Ollama reçoit ensuite les **textes retrouvés**, leurs sources et la question pour rédiger une réponse. Si aucun extrait n’est trouvé, Noria renvoie un message explicatif sans appeler Ollama.
 
 ## Compromis techniques (trade-offs)
 
