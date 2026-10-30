@@ -1,0 +1,68 @@
+# IDE et éditeurs
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# Python : bytecode, environnements et caches
+__pycache__/
+*.py[cod]
+.venv
+venv/
+env/
+ENV/
+__pypackages__/
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.ipynb_checkpoints/
+
+# Paquets et rapports générés
+build/
+dist/
+*.egg-info/
+.eggs/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+junit.xml
+
+# Configuration locale et secrets (conserver les modèles)
+.env
+.env.*
+!.env.sample
+!.env.example
+!.env.template
+.aws/
+*.pem
+*.key
+
+# Données et modèles locaux générés
+/data/*.parquet
+/data/processed/
+/data/cache/
+/data/raw/uploads/
+/qdrant_storage/
+/ollama_models/
+/models/
+/backups/
+/.cache/
+
+# Journaux et fichiers temporaires
+*.log
+/logs/
+/tmp/
+/temp/
+
+# Fichiers système
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini

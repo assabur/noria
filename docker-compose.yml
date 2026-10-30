@@ -1,8 +1,9 @@
-version: "3.8"
+name: noria
 
 services:
   qdrant:
-    image: qdrant/qdrant:latest
+    # Version compatible avec les anciens index RocksDB et le client Python 1.15.x.
+    image: qdrant/qdrant:v1.16.3
     container_name: qdrant
     restart: unless-stopped
     ports:
@@ -11,7 +12,16 @@ services:
     volumes:
       - qdrant_storage:/qdrant/storage
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+      # L’image Qdrant ne fournit pas curl : vérifier /readyz avec Bash.
+      test:
+        - CMD
+        - bash
+        - -ec
+        - |
+          exec 3<>/dev/tcp/127.0.0.1/6333
+          printf 'GET /readyz HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3
+          IFS= read -r status <&3
+          [[ "$$status" == *" 200 "* ]]
       interval: 10s
       timeout: 3s
       retries: 10
@@ -39,7 +49,7 @@ services:
     #           capabilities: ["gpu"]
     # Sinon, tu peux rester en CPU: ça marchera, juste plus lent.
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      test: ["CMD", "ollama", "list"]
       interval: 10s
       timeout: 3s
       retries: 10
