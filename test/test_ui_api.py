@@ -21,7 +21,7 @@ class TestEmbedder:
         vectors = []
         for text in texts:
             vector = np.zeros(64)
-            for word in text.lower().split():
+            for word in text.removeprefix("query: ").removeprefix("passage: ").lower().split():
                 slot = int(hashlib.sha256(word.encode()).hexdigest()[:8], 16) % len(vector)
                 vector[slot] += 1
             vectors.append(vector)
@@ -36,9 +36,9 @@ def client(tmp_path, monkeypatch):
     memory = QdrantClient(":memory:")
     embedder = TestEmbedder()
     monkeypatch.setattr(search, "get_client", lambda: memory)
-    monkeypatch.setattr(search, "get_embedder", lambda: embedder)
+    monkeypatch.setattr(search, "get_embedder", lambda model_name=None: embedder)
     monkeypatch.setattr(index, "get_client", lambda: memory)
-    monkeypatch.setattr(index, "get_embedder", lambda: embedder)
+    monkeypatch.setattr(index, "get_embedder", lambda model_name=None: embedder)
     pipeline.set_pipeline(status="idle", stage="En attente", progress=0, error=None, chunks=0, documents=0)
     with TestClient(main.app) as test_client:
         yield test_client
@@ -50,7 +50,7 @@ def upload(client, name="notes.txt", text="saturne anneaux planète"):
 
 
 def build(client, **kwargs):
-    response = client.post("/pipeline", json=kwargs)
+    response = client.post("/pipeline", json={"lang": "fr", **kwargs})
     assert response.status_code == 202
     assert client.get("/pipeline").json()["status"] == "done"
 
@@ -253,3 +253,108 @@ def test_bad_pdf_added_manually_does_not_replace_existing_index(client):
     assert not pipeline.PIPELINE_LOCK.locked()
     result = client.post("/retrieve", json={"question": "saturne", "lang": "fr"}).json()
     assert result["sources"]
+
+
+def test_english_pdf_is_not_excluded_for_french_question(client, monkeypatch):
+    monkeypatch.setattr(main, "LANG_FILTER", "")
+    content = pdf_bytes(["The Boreal warranty lasts 24 months."])
+    assert client.post("/documents", params={"filename": "warranty.pdf"}, content=content).status_code == 201
+    build(client, lang="en")
+    response = client.post("/retrieve", json={"question": "Quelle est la garantie du produit Boreal ?"})
+    assert response.status_code == 200
+    source = response.json()["sources"][0]
+    assert source["lang"] == "en" and source["page"] == 1
+    assert "24 months" in source["text"]
+    # Ce test valide le filtrage, pas la pertinence des embeddings simulés.
+    assert client.post("/retrieve", json={"question": "garantie", "lang": "fr"}).json()["sources"] == []
+
+
+def test_pipeline_defaults_to_multilingual_corpus(client):
+    upload(client)
+    assert client.post("/pipeline", json={}).status_code == 202
+    assert pipeline.pipeline_snapshot()["status"] == "done"
+    result = client.post("/retrieve", json={"question": "saturne", "lang": ""}).json()
+    assert result["sources"][0]["lang"] == "multi"
+
+
+def test_model_switch_uses_persisted_model_for_queries(client, monkeypatch):
+    from rag.embeddings import EMBEDDING_PROFILE
+
+    upload(client)
+    build(client)
+    alternate = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    calls = []
+
+    class AlternateEmbedder:
+        def encode(self, texts, **kwargs):
+            calls.append(texts)
+            return np.ones((len(texts), 32))
+
+    def load(model_name):
+        assert model_name == alternate
+        return AlternateEmbedder()
+
+    monkeypatch.setattr(index, "get_embedder", load)
+    monkeypatch.setattr(search, "get_embedder", load)
+    build(client, embeddings_model=alternate)
+    assert search.get_index_settings() == {"model": alternate, "legacy": False}
+    point = search.get_client().scroll(main.QDRANT_COLLECTION, limit=1)[0][0]
+    assert point.payload["embedding_profile"] == EMBEDDING_PROFILE
+    # Le modèle actif vient de Qdrant même si la configuration de démarrage change.
+    monkeypatch.setattr(search, "EMBEDDINGS_MODEL", "another-startup-default")
+    result = client.post("/retrieve", json={"question": "garantie", "lang": ""})
+    assert result.status_code == 200 and result.json()["sources"]
+    assert calls == [["saturne anneaux planète"], ["garantie"]]
+
+
+def test_e5_prefixes_are_used_for_new_indexes(client, monkeypatch):
+    upload(client)
+    seen = []
+
+    class RecordingEmbedder(TestEmbedder):
+        def encode(self, texts, **kwargs):
+            seen.append((texts, kwargs["normalize_embeddings"]))
+            return super().encode(texts, **kwargs)
+
+    monkeypatch.setattr(index, "get_embedder", lambda name: RecordingEmbedder())
+    monkeypatch.setattr(search, "get_embedder", lambda name: RecordingEmbedder())
+    build(client, embeddings_model="intfloat/multilingual-e5-base")
+    client.post("/retrieve", json={"question": "saturne", "lang": ""})
+    assert seen == [(["passage: saturne anneaux planète"], True), (["query: saturne"], True)]
+
+
+def test_unknown_model_rejected_and_download_failure_keeps_index(client, monkeypatch):
+    upload(client)
+    build(client)
+    previous = search.get_index_settings()
+    assert client.post("/pipeline", json={"embeddings_model": "unknown/model"}).status_code == 422
+
+    def failed_download(name):
+        raise OSError("Téléchargement impossible")
+
+    monkeypatch.setattr(index, "get_embedder", failed_download)
+    client.post("/pipeline", json={"embeddings_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"})
+    assert pipeline.pipeline_snapshot()["status"] == "error"
+    assert search.get_index_settings() == previous
+    assert client.post("/retrieve", json={"question": "saturne", "lang": ""}).json()["sources"]
+
+
+def test_legacy_index_keeps_original_query_encoding(client, monkeypatch):
+    upload(client)
+    build(client)
+    search.get_client().delete_payload(
+        main.QDRANT_COLLECTION, ["embedding_model", "embedding_profile"],
+        points=[point.id for point in search.get_client().scroll(main.QDRANT_COLLECTION)[0]],
+    )
+    assert search.get_index_settings()["legacy"] is True
+    seen = []
+
+    class LegacyEmbedder(TestEmbedder):
+        def encode(self, texts, **kwargs):
+            seen.append((texts, kwargs["normalize_embeddings"]))
+            return super().encode(texts, **kwargs)
+
+    monkeypatch.setattr(search, "get_embedder", lambda name: LegacyEmbedder())
+    response = client.post("/retrieve", json={"question": "saturne", "lang": ""})
+    assert response.status_code == 200
+    assert seen == [(["saturne"], False)]

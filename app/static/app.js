@@ -1,7 +1,7 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
-const state = { mode: 'retrieve', busy: false, uploading: false, pipelineRunning: false, languageInitialized: false, result: null, history: [] };
+const state = { mode: 'retrieve', busy: false, uploading: false, pipelineRunning: false, modelInitialized: false, result: null, history: [] };
 const HISTORY_KEY = 'noria-history-v1';
 let pipelineTimer;
 let elapsedTimer;
@@ -59,7 +59,7 @@ function updateControls() {
   $('run-pipeline').disabled = locked;
   $('file-input').disabled = locked;
   $('submit-query').disabled = locked;
-  ['chunk-size', 'chunk-overlap', 'corpus-lang'].forEach((id) => { $(id).disabled = locked; });
+  ['chunk-size', 'chunk-overlap', 'corpus-lang', 'embeddings-model'].forEach((id) => { $(id).disabled = locked; });
   document.querySelectorAll('[data-mode], [data-question]').forEach((button) => { button.disabled = state.busy; });
   $('export-test').disabled = !state.result || state.busy;
 }
@@ -73,10 +73,19 @@ async function refreshStatus() {
       $(`${name}-status`).textContent = service.detail;
       $(`${name}-dot`).className = `status-dot ${service.ok ? 'ok' : 'off'}`;
     }
-    if (!state.languageInitialized && ['fr', 'en'].includes(data.config.lang)) {
-      $('search-lang').value = data.config.lang;
-      state.languageInitialized = true;
+    if (!state.modelInitialized) {
+      $('embeddings-model').replaceChildren();
+      for (const model of data.config.embedding_models) {
+        const option = element('option', '', model.label);
+        option.value = model.id;
+        $('embeddings-model').append(option);
+      }
+      $('embeddings-model').value = data.config.embeddings || data.config.embeddings_default;
+      state.modelInitialized = true;
     }
+    $('active-embeddings').textContent = data.config.embeddings
+      ? `Modèle de l’index : ${data.config.embeddings}${data.config.embeddings_legacy ? ' · Ancien encodage : relancez la pipeline pour appliquer le profil multilingue.' : ''}`
+      : 'Modèle de l’index indisponible.';
     $('generation-caption').textContent = data.config.model;
   } catch (error) {
     for (const name of ['qdrant', 'ollama']) {
@@ -181,9 +190,8 @@ $('run-pipeline').addEventListener('click', async () => {
   message('');
   try {
     const lang = $('corpus-lang').value;
-    const data = await api('/pipeline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chunk_size: size, overlap, lang }) });
-    $('search-lang').value = lang;
-    state.languageInitialized = true;
+    const data = await api('/pipeline', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chunk_size: size, overlap, lang, embeddings_model: $('embeddings-model').value }) });
+    $('search-lang').value = '';
     renderPipeline(data);
     pipelineTimer = setTimeout(pollPipeline, 1000);
   } catch (error) {

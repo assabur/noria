@@ -12,7 +12,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.pipeline import PIPELINE_LOCK, pipeline_snapshot, run_pipeline, set_pipeline
 from rag.documents import DocumentReadError, SUPPORTED_SUFFIXES, read_document
-from rag.search import answer_question, retrieve
+from rag.search import answer_question, retrieve, get_index_settings
+from rag.embeddings import EMBEDDING_MODELS
 from rag.utils import (
     EMBEDDINGS_MODEL, LANG_FILTER, OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT_SECONDS,
     QDRANT_COLLECTION, QDRANT_HOST, QDRANT_PORT,
@@ -43,7 +44,15 @@ class AskReq(BaseModel):
 class PipelineReq(BaseModel):
     chunk_size: int = Field(default=300, ge=50, le=4000)
     overlap: int = Field(default=60, ge=0, le=1000)
-    lang: str = Field(default="fr", pattern=r"^(fr|en)$")
+    lang: str = Field(default="multi", pattern=r"^(multi|fr|en)$")
+    embeddings_model: str = EMBEDDINGS_MODEL
+
+    @field_validator("embeddings_model")
+    @classmethod
+    def supported_model(cls, value: str) -> str:
+        if value not in EMBEDDING_MODELS:
+            raise ValueError("Choisissez un modèle d’embeddings disponible.")
+        return value
 
 
 @app.get("/", include_in_schema=False)
@@ -155,7 +164,8 @@ def start_pipeline(req: PipelineReq, background: BackgroundTasks):
         raise HTTPException(409, "Une pipeline est déjà en cours.")
     set_pipeline(status="running", progress=5, stage="Préparation des documents", error=None,
                  documents=0, chunks=0)
-    background.add_task(run_pipeline, RAW_DIR, req.chunk_size, req.overlap, req.lang)
+    background.add_task(run_pipeline, RAW_DIR, req.chunk_size, req.overlap, req.lang,
+                        req.embeddings_model)
     return pipeline_snapshot()
 
 
@@ -180,7 +190,14 @@ def status():
                     services[name] = {"ok": available, "detail": OLLAMA_MODEL if available else f"Modèle à télécharger : {OLLAMA_MODEL}"}
             except (httpx.HTTPError, ValueError, KeyError, TypeError):
                 services[name] = {"ok": False, "detail": "Collection absente ou service indisponible" if name == "qdrant" else "Service indisponible"}
-    return {"services": services, "config": {"model": OLLAMA_MODEL, "embeddings": EMBEDDINGS_MODEL,
+    try:
+        index_settings = get_index_settings()
+    except Exception:
+        index_settings = {"model": None, "legacy": False}
+    return {"services": services, "config": {"model": OLLAMA_MODEL,
+            "embeddings": index_settings["model"], "embeddings_default": EMBEDDINGS_MODEL,
+            "embeddings_legacy": index_settings["legacy"],
+            "embedding_models": [{"id": key, "label": value} for key, value in EMBEDDING_MODELS.items()],
             "collection": QDRANT_COLLECTION, "lang": LANG_FILTER}}
 
 

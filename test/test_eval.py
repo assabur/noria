@@ -9,7 +9,7 @@ QUERIES = [
 def test_retrieval_quality():
     hits = 0
     for q, keyword in QUERIES:
-        docs, _ = retrieve(q, k=3, lang="fr")
+        docs, _ = retrieve(q, k=3, lang="")
         if any(keyword.lower() in (d["text"] or "").lower() for d in docs):
             hits += 1
     assert hits >= 1, ""

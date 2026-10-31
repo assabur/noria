@@ -3,17 +3,24 @@ import uuid
 
 from qdrant_client import models
 from rag.search import get_client, get_embedder
-from rag.utils import QDRANT_COLLECTION
+from rag.embeddings import EMBEDDING_MODELS, EMBEDDING_PROFILE, prepare_texts
+from rag.utils import EMBEDDINGS_MODEL, QDRANT_COLLECTION
 
 
-def index_documents(path="data/chunks.parquet", progress=lambda value, stage: None):
+def index_documents(path="data/chunks.parquet", progress=lambda value, stage: None,
+                    model_name=EMBEDDINGS_MODEL):
     import pandas as pd
 
+    if model_name not in EMBEDDING_MODELS:
+        raise ValueError("Modèle d’embeddings non proposé. Choisissez un modèle disponible.")
     frame = pd.read_parquet(path)
     if frame.empty:
         raise ValueError("Le corpus ne contient aucun extrait.")
     client = get_client()
-    vectors = get_embedder().encode(frame["text"].tolist(), batch_size=64, show_progress_bar=True)
+    texts = prepare_texts(frame["text"].tolist(), model_name, "passage")
+    vectors = get_embedder(model_name).encode(
+        texts, batch_size=64, show_progress_bar=True, normalize_embeddings=True,
+    )
     progress(70, "Écriture des vecteurs dans Qdrant")
     # Calculer les vecteurs avant de remplacer l'index existant.
     if client.collection_exists(QDRANT_COLLECTION):
@@ -25,6 +32,8 @@ def index_documents(path="data/chunks.parquet", progress=lambda value, stage: No
     )
     rows = frame.to_dict("records")
     for row in rows:
+        row["embedding_model"] = model_name
+        row["embedding_profile"] = EMBEDDING_PROFILE
         # Les anciens Parquet n'ont pas de page ; les textes ont une valeur nulle.
         page = row.get("page")
         row["page"] = None if pd.isna(page) else int(page)

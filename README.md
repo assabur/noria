@@ -14,7 +14,7 @@ Les documents sont indexés dans **Qdrant**, les vecteurs sont calculés avec **
 
 Le script d’ingestion parcourt les fichiers `.txt` et `.md` en UTF-8 ainsi que les PDF contenant du texte dans `data/raw/`, y compris les sous-dossiers. Il les découpe en extraits de **300 caractères**, avec un chevauchement de **60 caractères**, puis écrit `data/chunks.parquet`.
 
-Chaque extrait contient le texte, le chemin relatif du document (`doc_id`), son numéro d’extrait, sa langue, le chemin source et le numéro de page pour les PDF. Le découpage des PDF est effectué page par page pour préserver les références. L’indexation transforme ces textes en vecteurs avec `intfloat/multilingual-e5-base`, puis enregistre les vecteurs et leurs métadonnées dans Qdrant. La recherche utilise la similarité cosinus.
+Chaque extrait contient le texte, le chemin relatif du document (`doc_id`), son numéro d’extrait, sa langue, le chemin source et le numéro de page pour les PDF. Le découpage des PDF est effectué page par page pour préserver les références. L’indexation transforme ces textes en vecteurs avec `intfloat/multilingual-e5-base`, puis enregistre les vecteurs et leurs métadonnées dans Qdrant. Le modèle peut être changé depuis l’interface en relançant la pipeline. La recherche utilise la similarité cosinus.
 
 ```mermaid
 flowchart LR
@@ -33,7 +33,7 @@ flowchart LR
 
 ### 2. Réponse à une question
 
-La question est transformée en vecteur avec le même modèle. Qdrant renvoie les **3 extraits les plus proches**, filtrés par langue. Le programme construit un prompt contenant ces extraits et demande à Ollama une réponse de 5 à 7 phrases maximum, avec des sources entre crochets. Ces consignes restent des instructions au modèle, sans validation automatique du résultat.
+La question est transformée en vecteur avec le même modèle. Qdrant renvoie les **3 extraits les plus proches**, toutes langues confondues par défaut (filtre optionnel). Le programme construit un prompt contenant ces extraits et demande à Ollama une réponse de 5 à 7 phrases maximum, avec des sources entre crochets. Ces consignes restent des instructions au modèle, sans validation automatique du résultat.
 
 ```mermaid
 sequenceDiagram
@@ -173,10 +173,40 @@ Le service évite désormais d’appeler Ollama lorsqu’aucun extrait ne corres
 Après le démarrage de Qdrant, d’Ollama et de FastAPI décrit ci-dessous, ouvrir **[Noria](http://localhost:8000)**. L’interface est servie par FastAPI ; aucune compilation frontend n’est nécessaire.
 
 1. **Corpus & pipeline** : importer un ou plusieurs fichiers `.pdf`, `.txt` ou `.md` (textes en UTF-8), par glisser-déposer ou sélection (5 Mo maximum par fichier). Ils sont stockés dans `data/raw/uploads/`, dans des sous-dossiers uniques pour éviter les écrasements, et exclus de Git.
-2. Choisir la taille des extraits, le chevauchement et la langue attribuée au corpus, puis cliquer sur **Lancer la pipeline**. Elle découpe et réindexe tous les documents de `data/raw/`, y compris le document d’exemple. La progression indique les étapes, pas une estimation du temps restant.
+2. Choisir le modèle d’embeddings, la taille des extraits, le chevauchement et l’étiquette du corpus (Multilingue par défaut), puis cliquer sur **Lancer la pipeline**. Elle découpe et réindexe tous les documents de `data/raw/`, y compris le document d’exemple. La progression indique les étapes, pas une estimation du temps restant.
 3. Attendre « Corpus prêt pour la recherche », puis ouvrir le **Laboratoire**. Le premier téléchargement et chargement du modèle d’embeddings peut prendre plusieurs minutes.
-4. Saisir une question ou clé de recherche. Sélectionner **Recherche seule** pour examiner les extraits sans Ollama, ou **Recherche + réponse** pour tester aussi la génération. Ajuster la langue du filtre et le nombre d’extraits (1 à 10).
+4. Saisir une question ou clé de recherche. Sélectionner **Recherche seule** pour examiner les extraits sans Ollama, ou **Recherche + réponse** pour tester aussi la génération. Conserver « Toutes les langues » pour rechercher en français dans un PDF anglais ; ajuster le nombre d’extraits (1 à 10). Les filtres FR et EN restreignent les documents selon leur étiquette.
 5. Examiner les passages, les scores et les latences. L’interface conserve les 20 derniers tests dans le stockage local du navigateur et permet d’exporter un test complet en JSON. « Effacer » supprime cet historique local.
+
+### Rechercher en français dans un PDF anglais et changer de modèle
+
+Dans **Corpus & pipeline**, choisir **Multilingue** et un modèle d’embeddings, importer le PDF anglais et lancer la pipeline. Dans le **Laboratoire**, conserver **Toutes les langues** et poser la question en français. Les passages restent affichés dans leur langue originale ; le mode **Recherche + réponse** demande à Ollama une réponse dans la langue de la question.
+
+Le même modèle multilingue traite les documents anglais et les questions françaises. Il place leurs vecteurs dans un espace commun où ils peuvent être comparés par le sens. Noria ne change donc pas automatiquement de modèle selon la langue du PDF : le modèle choisi s’applique à tout le corpus et aux recherches qui suivent.
+
+Pour utiliser cette fonctionnalité sur une installation existante :
+
+1. Recharger la page de Noria pour afficher les nouveaux réglages.
+2. Dans **Corpus & pipeline**, choisir le **Modèle d’embeddings** et l’étiquette **Multilingue**.
+3. Cliquer sur **Lancer la pipeline** et attendre « Corpus prêt pour la recherche ». Cette étape recalcule les vecteurs de tous les documents.
+4. Dans le **Laboratoire**, garder **Documents → Toutes les langues**, puis saisir une question en français, même si le PDF est en anglais.
+
+Exemple : un PDF contient « The Boreal warranty lasts 24 months. ». La question « Combien de temps dure la garantie du produit Boreal ? » peut retrouver ce passage sans traduction préalable du document. Les filtres **FR uniquement** et **EN uniquement** limitent les résultats aux étiquettes choisies à l’indexation ; conserver **Toutes les langues** pour rechercher dans un corpus mixte.
+
+Deux modèles sont proposés :
+
+| Modèle | Usage |
+| --- | --- |
+| `intfloat/multilingual-e5-base` | Modèle multilingue par défaut, commun aux passages et aux questions |
+| `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | Alternative multilingue plus légère |
+
+Le modèle configuré via `EMBEDDINGS_MODEL` est aussi proposé s’il est différent. Le premier usage d’un modèle nécessite son téléchargement. Choisir un modèle dans le menu ne change pas immédiatement la recherche : **relancer la pipeline** applique ce choix à tout le corpus. Si le téléchargement ou le calcul échoue avant l’écriture, l’ancien index reste disponible. Pendant l’écriture, la collection existante est remplacée comme auparavant.
+
+Pour E5, Noria préfixe les questions par `query: ` et les extraits par `passage: `, puis normalise les vecteurs, conformément à la [fiche du modèle E5](https://huggingface.co/intfloat/multilingual-e5-base). L’alternative [MiniLM multilingue](https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2) n’utilise pas ces préfixes.
+
+Les nouveaux points Qdrant contiennent aussi `embedding_model` et `embedding_profile` dans leur payload. Pour les anciens index sans ces champs, Noria conserve l’encodage historique et suppose le modèle configuré dans `EMBEDDINGS_MODEL`. L’interface indique de relancer la pipeline pour appliquer le nouveau profil ; il faut le faire une fois pour bénéficier des préfixes E5.
+
+Après une indexation réussie, la recherche reprend le modèle enregistré dans Qdrant, même après un redémarrage du serveur. Le modèle actif apparaît sous le sélecteur de modèles. Pour en changer à nouveau, sélectionner l’autre modèle et relancer la pipeline.
 
 ### Comment lire le pourcentage de correspondance ?
 
@@ -265,7 +295,7 @@ Les valeurs suivantes proviennent de `.env.sample` :
 | `EMBEDDINGS_MODEL` | `intfloat/multilingual-e5-base` | Modèle de représentation vectorielle |
 | `CHUNK_SIZE` | `300` | Valeur chargée dans `utils.py`, non utilisée par le script d’ingestion |
 | `CHUNK_OVERLAP` | `60` | Valeur chargée dans `utils.py`, non utilisée par le script d’ingestion |
-| `LANG_FILTER` | `fr` | Langue par défaut des fonctions de recherche |
+| `LANG_FILTER` | vide | Aucun filtre par défaut ; `fr` ou `en` pour restreindre les documents côté API |
 
 Pour modifier le découpage, utiliser les options `--chunk-size` et `--overlap` du script d’ingestion.
 
@@ -294,7 +324,7 @@ poetry run python -m rag.ingest --path data/raw --chunk-size 300 --overlap 60
 poetry run python -m rag.index
 ```
 
-L’ingestion accepte les fichiers `.txt`, `.md` et `.pdf` contenant du texte extractible. Elle attribue **`lang="fr"` par défaut** à tous les extraits ; utiliser `--lang en` en ligne de commande, ou le sélecteur de l’interface, pour changer cette étiquette. La langue n’est pas détectée automatiquement. Les PDF sont lus avec `pypdf`. Les documents chiffrés, illisibles ou sans texte sont refusés avec un message explicite. Les PDF scannés nécessitent un OCR préalable ; les images ne sont pas analysées et les pages sans texte sont ignorées dans un PDF mixte. Le modèle d’embeddings est téléchargé au premier chargement.
+L’ingestion accepte les fichiers `.txt`, `.md` et `.pdf` contenant du texte extractible. Elle attribue **`lang="multi"` par défaut** à tous les extraits ; utiliser `--lang fr` ou `--lang en` en ligne de commande, ou le sélecteur de l’interface, pour restreindre cette étiquette. La langue n’est pas détectée automatiquement ; la recherche multilingue fonctionne sans cette détection. Les PDF sont lus avec `pypdf`. Les documents chiffrés, illisibles ou sans texte sont refusés avec un message explicite. Les PDF scannés nécessitent un OCR préalable ; les images ne sont pas analysées et les pages sans texte sont ignorées dans un PDF mixte. Le modèle d’embeddings est téléchargé au premier chargement.
 
 ### 4. Lancer l’API
 
@@ -329,7 +359,7 @@ curl -X POST http://localhost:8000/ask \
   -d '{"question":"Qu’est-ce qu’un DAG dans Apache Airflow ?","lang":"fr"}'
 ```
 
-**Utiliser la langue attribuée au corpus lors de son indexation.** Si `lang` est absent, l’API utilise `LANG_FILTER` (`fr` dans `.env.sample`, `en` sans configuration). `lang: ""` désactive le filtre. Le paramètre filtre les documents ; il ne fixe pas la langue de la réponse générée. Le champ optionnel `k` règle le nombre d’extraits entre 1 et 10 (3 par défaut).
+**Pour une recherche multilingue, utiliser `lang: ""`.** Si `lang` est absent, l’API utilise `LANG_FILTER` (vide par défaut). Un filtre explicite `fr` ou `en` ne retourne que les extraits portant cette étiquette ; il exclut ceux étiquetés `multi`. Le paramètre filtre les documents ; le prompt demande à Ollama de répondre dans la langue de la question, même si les sources sont dans une autre langue. Le champ optionnel `k` règle le nombre d’extraits entre 1 et 10 (3 par défaut).
 
 Structure de réponse indicative, avec texte et chiffres d’illustration :
 
@@ -406,6 +436,8 @@ poetry run python -m pytest test/test_ui_api.py
 
 Ces tests utilisent de vrais fichiers Parquet et Qdrant en mémoire. Les embeddings et les réponses Ollama sont simulés : ils valident le câblage et les erreurs, sans mesurer la qualité du modèle réel. Ils couvrent notamment l’import, les limites de taille et de format, la reconstruction de l’index, le filtre de langue, les extraits, les pourcentages et l’absence de génération sans contexte. Des PDF réels générés en mémoire vérifient aussi l’extraction, les numéros de page, les corpus mixtes et le rejet des PDF illisibles, chiffrés ou sans texte.
 
+La validation de la recherche multilingue a donné **33 tests réussis**, couvrant aussi le changement de modèle, la reprise du modèle enregistré, les préfixes E5 et la conservation de l’ancien index si le téléchargement du nouveau modèle échoue. Un essai distinct avec le vrai modèle E5 et Qdrant en mémoire a retrouvé en premier le PDF anglais sur la garantie depuis une question française, devant des documents sur la cuisine et la météo. Cet essai ponctuel valide ce scénario ; il ne constitue pas une mesure générale de pertinence.
+
 Test de recherche sur le corpus Airflow :
 
 ```bash
@@ -413,12 +445,12 @@ poetry run python -m pytest test/test_eval.py
 # Ou : make eval
 ```
 
-Ce second test nécessite Qdrant, le modèle d’embeddings et une collection contenant le document Airflow indexé avec `lang="fr"`. Il vérifie seulement qu’une recherche retrouve un extrait contenant « Airflow » ; il ne suffit pas pour évaluer la qualité des réponses générées.
+Ce second test nécessite Qdrant, le modèle d’embeddings et une collection contenant le document Airflow (recherche sans filtre de langue). Il vérifie seulement qu’une recherche retrouve un extrait contenant « Airflow » ; il ne suffit pas pour évaluer la qualité des réponses générées.
 
 Autres limites à connaître :
 
-- La langue choisie à l’ingestion est appliquée à l’ensemble du corpus. Les corpus multilingues demandent une gestion plus fine.
-- La recherche et l’indexation doivent utiliser le même modèle d’embeddings. Réindexer après un changement de modèle ou de corpus.
+- L’étiquette choisie à l’ingestion est appliquée à l’ensemble du corpus. Utiliser `multi` et aucun filtre pour un corpus français/anglais ou mixte ; cette étiquette n’est pas une détection de langue par document.
+- Le modèle d’embeddings et le profil d’encodage sont enregistrés avec les points Qdrant. La recherche reprend automatiquement ce modèle, y compris après redémarrage. Un changement de modèle demande une réindexation complète ; changer seulement `.env` ne remplace pas le modèle d’un index déjà identifié.
 - L’interface et les opérations sont prévues pour un usage local avec **un seul processus Uvicorn**. Ne pas ajouter `--workers`. Les opérations d’import, d’indexation et de recherche sont protégées contre leur exécution simultanée dans ce processus.
 - Pendant une indexation, garder le serveur actif et éviter de modifier les fichiers Python : le mode `--reload` redémarrerait le processus. L’état de progression est en mémoire et ne survit pas à un redémarrage.
 - L’API ne possède pas d’authentification ; le lancement proposé écoute sur `127.0.0.1` pour l’usage local.

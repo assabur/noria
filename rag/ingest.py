@@ -11,7 +11,7 @@ def chunk_text(text: str, size: int = 300, overlap: int = 60) -> list[str]:
     return [text[i:i + size] for i in range(0, len(text), size - overlap) if text[i:i + size].strip()]
 
 
-def ingest_documents(raw_dir, output, size=300, overlap=60, lang="fr"):
+def ingest_documents(raw_dir, output, size=300, overlap=60, lang="multi"):
     import pandas as pd
 
     rows = []
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     parser.add_argument("--path", default="data/raw/")
     parser.add_argument("--chunk-size", type=int, default=300)
     parser.add_argument("--overlap", type=int, default=60)
-    parser.add_argument("--lang", default="fr")
+    parser.add_argument("--lang", default="multi", choices=["multi", "fr", "en"])
     args = parser.parse_args()
     count, _ = ingest_documents(args.path, "data/chunks.parquet", args.chunk_size, args.overlap, args.lang)
     print(f"Saved {count} chunks to data/chunks.parquet")

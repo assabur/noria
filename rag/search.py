@@ -3,6 +3,7 @@ import time
 from functools import lru_cache
 import httpx
 from qdrant_client import QdrantClient, models
+from rag.embeddings import EMBEDDING_PROFILE, prepare_texts
 from rag.utils import (
 QDRANT_HOST, QDRANT_PORT, QDRANT_COLLECTION,
 OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT_SECONDS, EMBEDDINGS_MODEL, LANG_FILTER
@@ -14,11 +15,28 @@ def get_client():
 
 
 @lru_cache(maxsize=1)
-def get_embedder():
+def get_embedder(model_name: str = EMBEDDINGS_MODEL):
     # Le modèle est chargé à la première recherche, pas au démarrage de l'interface.
     from sentence_transformers import SentenceTransformer
 
-    return SentenceTransformer(EMBEDDINGS_MODEL)
+    return SentenceTransformer(model_name)
+
+
+def get_index_settings():
+    """Lire le modèle dans Qdrant pour le retrouver après un redémarrage."""
+    client = get_client()
+    if client.collection_exists(QDRANT_COLLECTION):
+        points, _ = client.scroll(
+            QDRANT_COLLECTION, limit=1, with_vectors=False,
+            with_payload=["embedding_model", "embedding_profile"],
+        )
+        if points:
+            payload = points[0].payload or {}
+            return {
+                "model": payload.get("embedding_model", EMBEDDINGS_MODEL),
+                "legacy": payload.get("embedding_profile") != EMBEDDING_PROFILE,
+            }
+    return {"model": EMBEDDINGS_MODEL, "legacy": False}
 
 SYSTEM_PROMPT = (
 "you are a technical assistant. Respond factually, citing your sources"
@@ -31,7 +49,11 @@ def correspondence_percent(score: float) -> float:
 
 def retrieve(query: str, k: int = 3, lang: str = LANG_FILTER):
     t0 = time.time()
-    qvec = get_embedder().encode([query])[0]
+    settings = get_index_settings()
+    texts = prepare_texts([query], settings["model"], "query", settings["legacy"])
+    qvec = get_embedder(settings["model"]).encode(
+        texts, normalize_embeddings=not settings["legacy"],
+    )[0]
     flt = models.Filter(must=[models.FieldCondition(
     key="lang", match=models.MatchValue(value=lang)
     )]) if lang else None
@@ -50,6 +72,7 @@ def retrieve(query: str, k: int = 3, lang: str = LANG_FILTER):
         "doc_id": h.payload.get("doc_id"),
         "source": h.payload.get("source"),
         "page": h.payload.get("page"),
+        "lang": h.payload.get("lang"),
         "score": float(h.score),
         "correspondence_pct": correspondence_percent(float(h.score)),
     } for h in hits]
@@ -79,7 +102,8 @@ def build_prompt(question: str, contexts: list[dict]) -> str:
     f"System: {SYSTEM_PROMPT}\n\n"
     f"Contexte:\n{ctx}\n\n"
     f"Question: {question}\n"
-    f"Answer in 5-7 sentences maximum and cite your sources in square brackets."
+    f"Answer in the language of the question, even if the sources use another language. "
+    f"Use 5-7 sentences maximum and cite your sources in square brackets."
     )
 
 def answer_question(question: str, lang: str = LANG_FILTER, k: int = 3):
